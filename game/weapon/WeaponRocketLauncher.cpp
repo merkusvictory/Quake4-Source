@@ -128,6 +128,9 @@ void rvWeaponRocketLauncher::Spawn ( void ) {
 		anim->SetPlaybackRate ( rate );
 	}
 
+	muzzle_kick_offset *= 5.0f;
+	muzzle_kick_angles.pitch *= 5.0f;
+
 	SetState ( "Raise", 0 );	
 	SetRocketState ( "Rocket_Idle", 0 );
 }
@@ -212,6 +215,8 @@ rvWeaponRocketLauncher::OnLaunchProjectile
 */
 void rvWeaponRocketLauncher::OnLaunchProjectile ( idProjectile* proj ) {
 	rvWeapon::OnLaunchProjectile(proj);
+
+	proj->SetSpeed(500.0f, 0);
 
 	// Double check that its actually a guided projectile
 	if ( !proj || !proj->IsType ( idGuidedProjectile::GetClassType() ) ) {
@@ -445,8 +450,8 @@ stateResult_t rvWeaponRocketLauncher::State_Fire ( const stateParms_t& parms ) {
 	};	
 	switch ( parms.stage ) {
 		case STAGE_INIT:
-			nextAttackTime = gameLocal.time + (fireRate * owner->PowerUpModifier ( PMOD_FIRERATE ));		
-			Attack ( false, 1, spread, 0, 1.0f );
+			nextAttackTime = gameLocal.time + 100;		
+			Attack ( false, 1, spread * 4, 0, 1.0f );
 			PlayAnim ( ANIMCHANNEL_LEGS, "fire", parms.blendFrames );	
 			return SRESULT_STAGE ( STAGE_WAIT );
 	
@@ -539,7 +544,7 @@ stateResult_t rvWeaponRocketLauncher::State_Rocket_Reload ( const stateParms_t& 
 			if ( animNum ) {
 				idAnim* anim;
 				anim = (idAnim*)viewModel->GetAnimator()->GetAnim ( animNum );				
-				anim->SetPlaybackRate ( (float)anim->Length() / (reloadRate * owner->PowerUpModifier ( PMOD_FIRERATE )) );
+				anim->SetPlaybackRate ( (float)anim->Length() / 100 );
 			}
 
 			PlayAnim( ANIMCHANNEL_TORSO, animName, parms.blendFrames );				
