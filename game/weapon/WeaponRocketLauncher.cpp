@@ -216,7 +216,7 @@ rvWeaponRocketLauncher::OnLaunchProjectile
 void rvWeaponRocketLauncher::OnLaunchProjectile ( idProjectile* proj ) {
 	rvWeapon::OnLaunchProjectile(proj);
 
-	proj->SetSpeed(500.0f, 0);
+	proj->SetSpeed(100.0f, 0);
 
 	// Double check that its actually a guided projectile
 	if ( !proj || !proj->IsType ( idGuidedProjectile::GetClassType() ) ) {
