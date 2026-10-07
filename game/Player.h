@@ -292,6 +292,16 @@ public:
 	int						godmodeDamage;
 	bool					undying;
 
+	bool					flightMode;						// activate flight sim mode
+	idMat3					flightAxis;						// flight sim mode orientation
+	idVec3					flightVelocity;					// flight sim mode speed
+	idAngles				flightAngles;					// flight sim mode angles
+	idAngles				flightCommandAngles;				// flight sim mode command angles
+
+	void					ToggleFlightMode(void);			// toggle flight sim mode
+	void					UpdateFlightOrientation(void); // update flight sim mode orientation
+	void					UpdateFlightVelocity(void);		// update flight sim mode speed
+
 	bool					spawnAnglesSet;		// on first usercmd, we must set deltaAngles
 	idAngles				spawnAngles;
 	idAngles				viewAngles;			// player view angles
@@ -785,6 +795,7 @@ public:
 	bool					CanFire( void ) const;
 
 	bool					AllowedVoiceDest( int from );
+
 
 // RITUAL BEGIN
 // squirrel: added DeadZone multiplayer

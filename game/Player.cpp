@@ -1502,6 +1502,7 @@ void idPlayer::Init( void ) {
 	godmode					= false;
 	godmodeDamage			= 0;
 	undying					= g_forceUndying.GetBool() ? !gameLocal.isMultiplayer : false;
+	flightMode				= false;
 
 	oldButtons				= 0;
 	oldFlags				= 0;
@@ -1809,6 +1810,9 @@ void idPlayer::Spawn( void ) {
 	idStr		temp;
 	idBounds	bounds;
 
+	// disabling flightmode upon spawn
+	flightMode = false;
+
 	if ( entityNumber >= MAX_CLIENTS ) {
 		gameLocal.Error( "entityNum > MAX_CLIENTS for player.  Player may only be spawned with a client." );
 	}
@@ -2093,6 +2097,7 @@ void idPlayer::Save( idSaveGame *savefile ) const {
 	savefile->WriteBool( godmode );
 	savefile->WriteInt ( godmodeDamage );	
 	savefile->WriteBool( undying );
+	savefile->WriteBool( flightMode );
 
 	// don't save spawnAnglesSet, since we'll have to reset them after loading the savegame
 	savefile->WriteAngles( spawnAngles );
@@ -2355,6 +2360,7 @@ void idPlayer::Restore( idRestoreGame *savefile ) {
 	savefile->ReadBool( godmode );
 	savefile->ReadInt ( godmodeDamage );	
 	savefile->ReadBool( undying );
+	savefile->ReadBool( flightMode );
 
 	savefile->ReadAngles( spawnAngles );
 	savefile->ReadAngles( viewAngles );
@@ -8953,6 +8959,16 @@ idPlayer::Move
 ==============
 */
 void idPlayer::Move( void ) {
+	
+	if (flightMode) {
+		physicsObj.SetMovementType(PM_NORMAL);
+		physicsObj.SetContents(CONTENTS_BODY);
+		physicsObj.SetGravity(vec3_origin);
+		physicsObj.SetLinearVelocity(flightVelocity);
+		RunPhysics();
+		return;
+	}
+	
 	float newEyeOffset;
 	idVec3 oldOrigin;
 	idVec3 oldVelocity;
@@ -9459,48 +9475,59 @@ void idPlayer::Think( void ) {
 
 		return;
 	}
+	
+	if (flightMode) {
 
-	// log movement changes for weapon bobbing effects
-	if ( usercmd.forwardmove != oldCmd.forwardmove ) {
-		loggedAccel_t	*acc = &loggedAccel[currentLoggedAccel&(NUM_LOGGED_ACCELS-1)];
-		currentLoggedAccel++;
-		acc->time = gameLocal.time;
-		acc->dir[0] = usercmd.forwardmove - oldCmd.forwardmove;
-		acc->dir[1] = acc->dir[2] = 0;
+		UpdateFlightOrientation();
+		UpdateFlightVelocity();
+		// UpdateFlightVelocity();
+
 	}
+	else {
 
-	if ( usercmd.rightmove != oldCmd.rightmove ) {
-		loggedAccel_t	*acc = &loggedAccel[currentLoggedAccel&(NUM_LOGGED_ACCELS-1)];
-		currentLoggedAccel++;
-		acc->time = gameLocal.time;
-		acc->dir[1] = usercmd.rightmove - oldCmd.rightmove;
-		acc->dir[0] = acc->dir[2] = 0;
+		// log movement changes for weapon bobbing effects
+		if (usercmd.forwardmove != oldCmd.forwardmove) {
+			loggedAccel_t* acc = &loggedAccel[currentLoggedAccel & (NUM_LOGGED_ACCELS - 1)];
+			currentLoggedAccel++;
+			acc->time = gameLocal.time;
+			acc->dir[0] = usercmd.forwardmove - oldCmd.forwardmove;
+			acc->dir[1] = acc->dir[2] = 0;
+		}
+
+		if (usercmd.rightmove != oldCmd.rightmove) {
+			loggedAccel_t* acc = &loggedAccel[currentLoggedAccel & (NUM_LOGGED_ACCELS - 1)];
+			currentLoggedAccel++;
+			acc->time = gameLocal.time;
+			acc->dir[1] = usercmd.rightmove - oldCmd.rightmove;
+			acc->dir[0] = acc->dir[2] = 0;
+		}
+
+		// freelook centering
+		if ((usercmd.buttons ^ oldCmd.buttons) & BUTTON_MLOOK) {
+			centerView.Init(gameLocal.time, 200, viewAngles.pitch, 0);
+		}
+
+		// if we have an active gui, we will unrotate the view angles as
+		// we turn the mouse movements into gui events
+		idUserInterface* gui = ActiveGui();
+		if (gui && gui != focusUI) {
+			RouteGuiMouse(gui);
+		}
+
+		// set the push velocity on the weapon before running the physics
+		if (weapon) {
+			weapon->SetPushVelocity(physicsObj.GetPushedLinearVelocity());
+		}
+
+		EvaluateControls();
+
 	}
-
-	// freelook centering
-	if ( ( usercmd.buttons ^ oldCmd.buttons ) & BUTTON_MLOOK ) {
-		centerView.Init( gameLocal.time, 200, viewAngles.pitch, 0 );
-	}
-
-	// if we have an active gui, we will unrotate the view angles as
-	// we turn the mouse movements into gui events
-	idUserInterface *gui = ActiveGui();
-	if ( gui && gui != focusUI ) {
-		RouteGuiMouse( gui );
-	}
-
-	// set the push velocity on the weapon before running the physics
-	if ( weapon ) {
-		weapon->SetPushVelocity( physicsObj.GetPushedLinearVelocity() );
-	}
-
-	EvaluateControls();
 
 
 // RAVEN BEGIN
 // abahr
 	if( !noclip && !spectating ) {
-		UpdateGravity();
+		UpdateGravity();	
 	}
 // RAVEN END
 
@@ -9730,6 +9757,9 @@ idPlayer::Killed
 */
 void idPlayer::Killed( idEntity *inflictor, idEntity *attacker, int damage, const idVec3 &dir, int location ) {
 	float delay;
+
+	// disabling flightmode when killed
+	flightMode = false;
 
 	assert( !gameLocal.isClient );
 
@@ -14075,6 +14105,125 @@ int idPlayer::CanSelectWeapon(const char* weaponName)
 	}
 
 	return weaponNum;
+}
+
+/*
+===============
+idPlayer::ToggleFlightMode
+===============
+*/
+void idPlayer::ToggleFlightMode(void) {
+	flightMode = !flightMode;
+
+	if (flightMode) {
+		flightAxis = viewAngles.ToMat3();
+		flightAxis.OrthoNormalize();
+
+		flightAngles = viewAngles;
+
+		for (int i = 0; i < 3; i++) {
+			flightCommandAngles[i] = SHORT2ANGLE(usercmd.angles[i]);
+		}
+
+		flightVelocity = physicsObj.GetLinearVelocity();
+		physicsObj.SetGravity(vec3_origin);
+
+	}
+	else {
+		physicsObj.SetGravity(gameLocal.GetGravity());
+		
+		idAngles flightAngles = flightAxis.ToAngles();
+		flightAngles.roll = 0.0f;
+
+		SetViewAngles(flightAngles);
+	}
+}
+
+/*
+===============
+idPlayer::UpdateFlightOrientation
+
+flightAxis[0] = forward
+flightAxis[1] = left
+flightAxis[2] = up
+===============
+*/
+void idPlayer::UpdateFlightOrientation(void) {
+
+	idAngles commandAngles;
+
+	for (int i = 0; i < 3; i++) {
+		commandAngles[i] = SHORT2ANGLE(usercmd.angles[i]);
+	}
+
+	float pitch = 0.0f;
+	float yaw = 0.0f;
+
+	if (usercmd.forwardmove > 0) {
+		pitch = -2.0f; 
+	}
+	else if (usercmd.forwardmove < 0) {
+		pitch = 2.0f; 
+	}
+
+	if (usercmd.rightmove < 0) {
+		yaw = -1.0f;
+	}
+	else if (usercmd.rightmove > 0) {
+		yaw = 1.0f;
+	}
+
+	float roll = commandAngles.yaw - flightCommandAngles.yaw;
+
+	if (roll > 180.0f) {
+		roll -= 360.0f;
+	}
+	else if (roll < -180.0f) {
+		roll += 360.0f;
+	}
+
+	idRotation rollRot(vec3_zero, flightAxis[0], roll);
+
+	flightAxis = rollRot.ToMat3() * flightAxis;
+
+	idRotation pitchRot(vec3_zero, flightAxis[1], pitch);
+
+	flightAxis = pitchRot.ToMat3() * flightAxis;
+
+	idRotation yawRot(vec3_zero, flightAxis[2], yaw);
+
+	flightAxis = yawRot.ToMat3() * flightAxis;
+
+
+	flightAxis.OrthoNormalize();
+
+	viewAngles = flightAxis.ToAngles();
+	flightCommandAngles = commandAngles;
+
+	UpdateDeltaViewAngles(viewAngles);
+
+}
+
+/*
+===============
+idPlayer::UpdateFlightVelocity
+
+flightAxis[0] = forward
+flightAxis[1] = left
+flightAxis[2] = up
+===============
+*/
+void idPlayer::UpdateFlightVelocity(void) {
+	float speed = pm_walkspeed.GetFloat();
+
+	if (usercmd.upmove > 0) {
+		flightVelocity = flightAxis[0] * speed;
+	}
+	else {
+		flightVelocity = vec3_zero;
+	}
+
+	physicsObj.SetLinearVelocity(flightVelocity);
 }
 
 // RITUAL END

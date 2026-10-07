@@ -690,6 +690,33 @@ void Cmd_Noclip_f( const idCmdArgs &args ) {
 }
 
 /*
+==================
+Cmd_ToggleFlight_f
+
+argv(0) toggleflight
+==================
+*/
+void Cmd_ToggleFlight_f(const idCmdArgs& args) {
+	char* msg;
+	idPlayer* player;
+
+	player = gameLocal.GetLocalPlayer();
+	if (!player || !gameLocal.CheatsOk()) {
+		return;
+	}
+
+	if (player->flightMode) {
+		msg = "flight OFF\n";
+	}
+	else {
+		msg = "flight ON\n";
+	}
+
+	gameLocal.Printf("%s", msg);
+	player->ToggleFlightMode();
+}
+
+/*
 =================
 Cmd_Kill_f
 =================
@@ -3133,6 +3160,7 @@ void idGameLocal::InitConsoleCommands( void ) {
 	cmdSystem->AddCommand( "saveParticles",			Cmd_SaveParticles_f,		CMD_FL_GAME|CMD_FL_CHEAT,	"saves all lights to the .map file" );
 	cmdSystem->AddCommand( "clearLights",			Cmd_ClearLights_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"clears all lights" );
 	cmdSystem->AddCommand( "gameError",				Cmd_GameError_f,			CMD_FL_GAME|CMD_FL_CHEAT,	"causes a game error" );
+	cmdSystem->AddCommand("toggleFlight", Cmd_ToggleFlight_f, CMD_FL_GAME | CMD_FL_CHEAT, "toggles flight mode");
 
 // RAVEN BEGIN
 // rjohnson: entity usage stats
